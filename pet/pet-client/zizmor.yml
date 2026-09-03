@@ -1,0 +1,14 @@
+# zizmor configuration. See .github/workflows/security.yml.
+
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # zizmor's default is hash-pin: every `uses:` must name a commit SHA.
+        # This repository pins to tags instead, deliberately — Dependabot tracks
+        # tags and opens a reviewable bump PR, and a SHA pin freezes an action
+        # at whatever it was on the day it was written, which is how the fleet
+        # ended up spanning three major versions of the same action.
+        # The trade-off accepted here: a tag can be moved by whoever owns the
+        # action, so this is trust in the action's publisher, not in the ref.
+        "*": ref-pin
