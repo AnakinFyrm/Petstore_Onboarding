@@ -1,0 +1,210 @@
+name: Main
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# One run per ref: a new push supersedes the previous run instead of queueing
+# next to it. PR refs (refs/pull/N/merge) are distinct per PR, so a superseded
+# run never takes another PR or a main build down with it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege for every job in this file; only the image build raises it.
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    # Long enough for a cold pre-commit hook install, short enough that a hung
+    # step does not hold a runner for the six-hour default.
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Run checks
+        run: make check
+
+  # commitizen derives the next version and the changelog from commit messages,
+  # so a non-conventional message is caught here instead of at release time.
+  commit-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # cz walks a commit range, which the default shallow clone lacks.
+          fetch-depth: 0
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      # An explicit base..head range rather than HEAD: on pull_request HEAD is
+      # GitHub's generated merge commit, whose message is never conventional.
+      - name: Check commit messages
+        run: uv run cz check --rev-range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  tests-and-type-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        python-version: ["3.14"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    # At job level so a step-level `if` can test it; the secrets context itself is
+    # not available in `if`.
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    # An empty database is all the suite needs: the db tests apply init.sql
+    # themselves through apply_schema, exactly as the service does at startup.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pet_agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Run tests
+        # Without this the database tests skip themselves.
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pet_agent
+        run: uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml
+
+      - name: Check typing
+        run: uv run mypy
+
+      # Skipped until CODECOV_TOKEN exists, so a freshly generated repository is
+      # green on its first push instead of failing on an integration nobody has
+      # set up yet.
+      - name: Upload coverage reports to Codecov
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v7
+
+  check-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Check if documentation can be built
+        run: uv run mkdocs build -s
+
+  # Every merge to main publishes a moving `dev` image (plus an immutable
+  # sha-<commit> tag) to GHCR. Staging tracks `dev`; production only ever runs
+  # the semver tags published by the release workflow.
+  build-and-push-image:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [quality, tests-and-type-check]
+    runs-on: ubuntu-latest
+    # The arm64 leg runs under emulation, so this job is minutes, not seconds.
+    timeout-minutes: 30
+    # No id-token or attestations scope: the SBOM and provenance are attached to
+    # the image in the registry, not uploaded to GitHub's attestation store.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Emulation for the linux/arm64 leg; the runner itself is amd64 only.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=dev
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          # BuildKit attaches the SBOM and SLSA provenance to the image in GHCR
+          # itself: one mechanism instead of two (no actions/attest-*), no
+          # id-token permission and no attestations API, so this also works for
+          # a private repository. The cost is extra untagged package versions,
+          # which the multi-arch index creates anyway; prune-dev-images.yml
+          # explains why those are left alone.
+          # mode=max records build arguments, so never pass a secret as one:
+          # private dependencies use a BuildKit secret, which stays redacted.
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            github_token=${{ secrets.GH_DEP_TOKEN }}

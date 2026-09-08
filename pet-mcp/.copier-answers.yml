@@ -1,0 +1,25 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.4.0
+_src_path: C:\Users\ZhuanZ\Desktop\template\fyrm-template-gen
+author_email: anakin.chen@fyrm.ai
+author_name: Tianjun Chen
+github_org: fyrm-ai
+project_description: A fyrm onboarding project.
+project_name: pet-mcp
+project_slug: pet_mcp
+project_type: agent-service
+use_adr: true
+use_ci: true
+use_claude_scaffold: true
+use_codecov: true
+use_compose: true
+use_devcontainer: false
+use_docker: true
+use_docs: true
+use_ghcr: true
+use_logfire: true
+use_postgres: true
+use_private_deps: true
+use_release_automation: true
+use_security_scanning: true
+use_service_core: true

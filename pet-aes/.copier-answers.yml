@@ -1,0 +1,24 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.4.0
+_src_path: /sessions/rcw-011rpurfdd52ag1qgjr3om6m/mnt/Desktop/template/fyrm-template-gen
+author_email: anakin.chen@fyrm.ai
+author_name: Tianjun Chen
+github_org: fyrm-ai
+package_extras: ''
+project_description: 'Generic Agentic Enterprise System (AES) building blocks: agent
+    spec/registry and MCP toolset wiring, adapted for the Petstore onboarding project.'
+project_name: pet-aes
+project_slug: pet_aes
+project_type: library
+use_adr: true
+use_async_tests: false
+use_ci: true
+use_claude_scaffold: true
+use_codecov: true
+use_devcontainer: true
+use_docker: false
+use_docs: true
+use_postgres: false
+use_private_deps: false
+use_release_automation: true
+use_security_scanning: true

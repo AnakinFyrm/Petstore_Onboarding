@@ -1,0 +1,114 @@
+name: release-main
+
+on:
+  release:
+    types: [published]
+
+# Least privilege for the whole file; each job raises only what it needs.
+# Deliberately no `concurrency` here: a release publish must never be
+# interrupted by the next one.
+permissions:
+  contents: read
+
+jobs:
+  deploy-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # `environment` is a job-level key; it is invalid at the workflow top level.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Build documentation
+        run: uv run mkdocs build --clean
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  # Publishing a GitHub Release vX.Y.Z pushes the image tagged X.Y.Z, X.Y and
+  # latest to GHCR. Production pins the exact X.Y.Z tag.
+  publish-image:
+    runs-on: ubuntu-latest
+    # Same emulated multi-arch build as main.yml, so the same budget.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check release tag matches pyproject.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)"
+          if [ "$tag" != "$version" ]; then
+            echo "Release tag ($tag) does not match pyproject.toml version ($version)." >&2
+            echo "Bump pyproject.toml (uv version $tag) before releasing." >&2
+            exit 1
+          fi
+
+      # Emulation for the linux/arm64 leg; the runner itself is amd64 only.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          # Platforms and attestations match main.yml, which explains the
+          # choice: a release image must not differ from the dev image it was
+          # promoted from in anything but its tags.
+          platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            github_token=${{ secrets.GH_DEP_TOKEN }}

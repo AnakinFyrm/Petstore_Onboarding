@@ -1,0 +1,153 @@
+[project]
+name = "pet-mcp"
+version = "0.0.1"
+description = "A fyrm onboarding project."
+authors = [{ name = "Tianjun Chen", email = "Anakin.chen@fyrm.ai" }]
+readme = "README.md"
+keywords = ["python"]
+requires-python = ">=3.14"
+dependencies = [
+    # <2: mcp 2.0 removed mcp.server.fastmcp; migrating server.py to the new
+    # MCPServer API is a roadmap item, until then a fresh resolve must not break.
+    "mcp>=1.2,<2",
+    "httpx>=0.27",
+    "logfire[httpx]>=4.0",
+    "pet-client",
+]
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
+classifiers = [
+    "License :: Other/Proprietary License",
+    # Not a real PyPI classifier: the index rejects it, which is the point. An
+    # accidental `twine upload` of internal code fails at the index instead of
+    # at a reviewer.
+    "Private :: Do Not Upload",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Repository = "https://github.com/fyrm-ai/pet-mcp"
+Homepage = "https://fyrm-ai.github.io/pet-mcp/"
+Documentation = "https://fyrm-ai.github.io/pet-mcp/"
+
+[project.scripts]
+pet-mcp = "pet_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=0.24",
+    "pre-commit>=4.5.1",
+    "tox-uv>=1.33.4",
+    "deptry>=0.25.1",
+    "mypy>=1.19.1",
+    "ruff>=0.15.14",
+    "codespell>=2.4.2",
+    "commitizen>=4.1",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pet_mcp"]
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "YTT",
+    "S",
+    "B",
+    "A",
+    "C4",
+    "T10",
+    "SIM",
+    "I",
+    "C90",
+    "E",
+    "W",
+    "F",
+    "PGH",
+    "UP",
+    "RUF",
+    "TRY",
+    "ASYNC",
+    "ARG",
+    "RET",
+    "PIE",
+    "LOG",
+    "TID",
+    "PTH",
+    "DTZ",
+]
+ignore = [
+    "E501",
+    "E731",
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "ARG001", "ARG002"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+skip_empty = true
+fail_under = 50
+
+[tool.codespell]
+skip = "uv.lock,.venv,__pycache__,.pytest_cache,.git"
+
+# Conventional commits drive the version bump and the changelog. `make bump`
+# reads the commits since the last tag, decides major/minor/patch, rewrites the
+# version here and in CHANGELOG.md, and creates the tag.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+version_files = ["pyproject.toml:^version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.deptry.per_rule_ignores]
+# httpx is part of the house dependency set for this project type, but the
+# generated skeleton does not import it under src/ yet. Remove this ignore once
+# it is used directly.
+DEP002 = ["httpx"]
+
+[tool.uv.sources]
+pet-client = { path = "../pet-client", editable = true }

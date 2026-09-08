@@ -1,0 +1,46 @@
+site_name: pet-agent
+repo_url: https://github.com/fyrm-ai/pet-agent
+site_url: https://fyrm-ai.github.io/pet-agent
+site_description: A fyrm onboarding project.
+site_author: Tianjun Chen
+edit_uri: edit/main/docs/
+repo_name: fyrm-ai/pet-agent
+
+nav:
+  - Home: index.md
+  - Configuration: configuration.md
+  - Operations: operations.md
+  - Private dependencies: private-dependencies.md
+  - Decisions: decisions/index.md
+  - Modules: modules.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["src/pet_agent"]
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - toc:
+      permalink: true

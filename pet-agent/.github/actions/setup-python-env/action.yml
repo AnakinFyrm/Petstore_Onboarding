@@ -1,0 +1,59 @@
+name: "Setup Python Environment"
+description: "Set up Python environment for the given Python version"
+
+inputs:
+  python-version:
+    description: "Python version to use"
+    required: true
+    default: "3.14"
+  uv-version:
+    # Pinned on purpose: uv resolves and installs the whole environment, so its
+    # version is part of the build. Dependabot does not track it; bump it here.
+    # Floor is 0.11: uv.lock is written at revision 3, `uv audit` (used by the
+    # security workflow) arrived in 0.11.14, and 0.11.15 fixed two advisories
+    # against uv itself that the audit would otherwise report.
+    description: "uv version to use"
+    required: true
+    default: "0.11.32"
+  github-token:
+    description: "Token with read access to private git dependencies (other repos in your org). Pass secrets.GH_DEP_TOKEN. Leave empty if all deps are public."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # Pinned to an exact version, unlike every other action here: setup-uv
+    # stopped publishing floating major tags. Dependabot keeps it current.
+    - name: Install uv
+      uses: astral-sh/setup-uv@v9.0.0
+      with:
+        version: ${{ inputs.uv-version }}
+        enable-cache: 'true'
+        # The resolved input, not matrix.python-version: jobs without a matrix
+        # would otherwise share one unsuffixed cache with every other job.
+        cache-suffix: ${{ inputs.python-version }}
+
+    # Private git dependencies need credentials before `uv sync`: the default
+    # GITHUB_TOKEN cannot read other private repos, so a PAT is passed via
+    # secrets.GH_DEP_TOKEN and this step rewrites GitHub HTTPS URLs to carry it.
+    # The token goes through `env`, never interpolated into the script body: a
+    # `${{ }}` inside a run block is substituted before the shell parses it, so
+    # a value containing shell metacharacters would be executed rather than
+    # used. Passing it as an environment variable keeps it data.
+    - name: Configure git auth for private dependencies
+      if: ${{ inputs.github-token != '' }}
+      shell: bash
+      env:
+        GH_DEP_TOKEN: ${{ inputs.github-token }}
+      run: |
+        git config --global url."https://x-access-token:${GH_DEP_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+    - name: Install Python dependencies
+      run: uv sync --frozen
+      shell: bash

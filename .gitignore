@@ -1,0 +1,12 @@
+# If this top-level directory (the parent of all five projects) is ever
+# tracked by git itself - each project already has its own .gitignore for its
+# own contents - this keeps the one real secret this level introduces out of
+# it: the top-level .env (see .env.example and README.md).
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# The scratch tarball used to transfer this whole tree into a build/test
+# environment; never meant to be committed or to persist here.
+.docker-build-scratch.tar.gz

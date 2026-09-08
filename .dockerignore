@@ -1,0 +1,81 @@
+# Build context for pet-agent/Dockerfile is this whole directory (see that
+# Dockerfile's own top comment for why). Docker only ever reads the single
+# .dockerignore that sits at the ROOT of the build context - it does NOT also
+# read pet-agent/.dockerignore or pet-mcp/.dockerignore once the context is
+# widened to here, so this file has to redo, for every one of the four
+# projects that get COPY'd in, what each project's own .dockerignore already
+# did for its narrower, single-project build.
+#
+# The one entry that matters most: pet-agent/.env.dev (and any other
+# .env.$APP_ENV profile file) can hold a real LLM API key once a developer has
+# filled it in locally. Without the lines below, `COPY pet-agent pet-agent`
+# would copy it straight into an image layer - exactly what ONBOARDING.md's
+# Step 9 text explicitly forbids ("must not be stored in an image"). Every
+# project-scoped .dockerignore below is complete on its own (real secrets are
+# ALWAYS excluded, even for a project not currently reachable through
+# pet-agent/Dockerfile's own COPY list), rather than only covering what this
+# one Dockerfile happens to copy today.
+#
+# pet-agent/Dockerfile 的构建上下文是这整个目录(原因见那份 Dockerfile 自己
+# 最上面的注释)。Docker 只会读位于构建上下文*根目录*的那一份 .dockerignore——
+# 一旦上下文变成这一层,它就不会再去读 pet-agent/.dockerignore 或
+# pet-mcp/.dockerignore 了,所以这份文件必须替下面复制进来的四个项目,把它们
+# 各自那份(只管自己单项目构建时)的 .dockerignore 该做的事,重新做一遍。
+#
+# 这里最要紧的一条:pet-agent/.env.dev(以及任何其他 .env.$APP_ENV профиль
+# 文件)一旦开发者在本地填好了,就可能带着真实的 LLM API 密钥。没有下面这几
+# 行的话,`COPY pet-agent pet-agent` 就会把它原样拷进镜像层——这正是
+# ONBOARDING.md 第 9 步文字里明确禁止的("不能存进镜像里")。下面每个项目各
+# 自的一段都是完整的(真正的密钥永远被排除在外,即便这个项目今天并不在
+# pet-agent/Dockerfile 的 COPY 列表里),而不只是覆盖这份 Dockerfile 今天恰好
+# 用到的部分。
+
+# ---- common, every project ----
+**/.git
+**/.github
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/__pycache__
+**/*.pyc
+**/dist
+**/build
+**/htmlcov
+**/.coverage
+**/coverage.xml
+**/docs
+**/site
+**/.devcontainer
+**/*.log
+**/.vscode
+**/.claude
+**/mkdocs.yml
+**/codecov.yaml
+**/.pre-commit-config.yaml
+**/.editorconfig
+**/tox.ini
+
+# ---- secrets and local env, every project - inject at runtime, never bake
+# into an image ----
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.shared
+!**/.env.*.example
+
+# ---- this scratch build-transfer file, if it is ever present at the root ----
+.docker-build-scratch.tar.gz
+
+# ---- pet-mcp / pet-agent only: their own Dockerfile/compose files are not
+# needed inside a build that already has its own Dockerfile at the top of
+# this context ----
+pet-mcp/Dockerfile
+pet-mcp/docker-compose*.yml
+pet-mcp/Makefile
+pet-agent/docker-compose*.yml
+pet-agent/Makefile
+
+# ---- petstore-api: not part of pet-agent/Dockerfile's COPY list, excluded
+# defensively for the same reason as the others ----
+petstore-api/README.md

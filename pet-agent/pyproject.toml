@@ -1,0 +1,200 @@
+[project]
+name = "pet-agent"
+version = "0.0.1"
+description = "A fyrm onboarding project."
+authors = [{ name = "Tianjun Chen", email = "anakin.chen@fyrm.ai" }]
+readme = "README.md"
+keywords = ["python"]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2",
+    # TEMPORARY: disabled because this checkout has no read access yet to
+    # this private repo (see docs/private-dependencies.md and
+    # src/pet_agent/_service_core_shim/__init__.py). Uncomment this line
+    # (and the matching [tool.uv.sources] entry below) once access is
+    # available, and delete the shim package.
+    # "fyrm-service-core[settings]",
+    "pydantic-ai-slim[anthropic,openai,mcp]>=2.0.0",
+    # The AES building blocks this agent is hosted in (Step 7): AgentSpec +
+    # build_agent (turns a spec into a pydantic_ai.Agent, MCP tools filtered
+    # to an allow-list) and HostedAgentService (the operational boundary that
+    # runs it - the CLI talks to this, never to pydantic_ai.Agent directly).
+    # A local path dependency, the same pattern pet-mcp uses for pet-client.
+    # 这个 agent 托管其中的 AES 基础设施(第 7 步):AgentSpec + build_agent
+    # (把一份 spec 变成一个 pydantic_ai.Agent,MCP 工具按白名单过滤)以及
+    # HostedAgentService(运行它的"运行边界"——CLI 只跟这个打交道,不直接碰
+    # pydantic_ai.Agent)。一个本地路径依赖,跟 pet-mcp 依赖 pet-client 是同一
+    # 种写法。
+    "pet-aes",
+    # agent.py imports StdioTransport from here directly (not via
+    # pydantic_ai.mcp's re-export of it, which mypy --strict flags as
+    # implicit) - declared explicitly rather than relying on it only
+    # arriving transitively through pydantic-ai-slim's own "mcp" extra above.
+    # agent.py 直接从这里导入 StdioTransport(而不是通过 pydantic_ai.mcp 对它的
+    # 转导出,那样写 mypy --strict 会标记为隐式导出)——这里显式声明这个依赖,
+    # 而不是依赖它仅仅通过上面 pydantic-ai-slim 的 "mcp" extra 间接带进来。
+    "fastmcp-slim[client]>=3.3.0",
+    "httpx>=0.27",
+    "asyncpg>=0.30",
+    "logfire[httpx,asyncpg]>=4.0",
+]
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
+classifiers = [
+    "License :: Other/Proprietary License",
+    # Not a real PyPI classifier: the index rejects it, which is the point. An
+    # accidental `twine upload` of internal code fails at the index instead of
+    # at a reviewer.
+    "Private :: Do Not Upload",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Repository = "https://github.com/fyrm-ai/pet-agent"
+Homepage = "https://fyrm-ai.github.io/pet-agent/"
+Documentation = "https://fyrm-ai.github.io/pet-agent/"
+
+[project.scripts]
+pet-agent = "pet_agent.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    # Server-building support for fastmcp, on top of the client support that
+    # pydantic-ai-slim's own "mcp" extra already pulls in. Tests use this to
+    # build an in-process fake pet-mcp (a FastMCP instance handed straight to
+    # MCPToolset) instead of launching the real subprocess.
+    # 在 pydantic-ai-slim 的 "mcp" extra 已经引入的客户端支持之上,再加上
+    # fastmcp 的服务端构建能力。测试用它来搭一个进程内的假 pet-mcp(直接把一个
+    # FastMCP 实例交给 MCPToolset),而不用真的启动子进程。
+    "fastmcp-slim[server]>=3.3.0",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=0.24",
+    "pre-commit>=4.5.1",
+    "tox-uv>=1.33.4",
+    "deptry>=0.25.1",
+    "mypy>=1.19.1",
+    "ruff>=0.15.14",
+    "codespell>=2.4.2",
+    "commitizen>=4.1",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pet_agent"]
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# asyncpg ships no type stubs and no py.typed marker.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "YTT",
+    "S",
+    "B",
+    "A",
+    "C4",
+    "T10",
+    "SIM",
+    "I",
+    "C90",
+    "E",
+    "W",
+    "F",
+    "PGH",
+    "UP",
+    "RUF",
+    "TRY",
+    "ASYNC",
+    "ARG",
+    "RET",
+    "PIE",
+    "LOG",
+    "TID",
+    "PTH",
+    "DTZ",
+]
+ignore = [
+    "E501",
+    "E731",
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "ARG001", "ARG002"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+skip_empty = true
+fail_under = 50
+
+[tool.codespell]
+skip = "uv.lock,.venv,__pycache__,.pytest_cache,.git"
+
+# Conventional commits drive the version bump and the changelog. `make bump`
+# reads the commits since the last tag, decides major/minor/patch, rewrites the
+# version here and in CHANGELOG.md, and creates the tag.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+version_files = ["pyproject.toml:^version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.uv.sources]
+pet-aes = { path = "../pet-aes", editable = true }
+
+[tool.deptry.per_rule_ignores]
+# httpx is part of the house dependency set for this project type, but the
+# generated skeleton does not import it under src/ yet. Remove this ignore once
+# it is used directly.
+DEP002 = ["httpx"]
+
+# The shared library is a private git dependency pinned to a tag. Dependabot
+# cannot see git tags, so this pin is bumped by fleet tooling or by hand —
+# never pin a branch: a moving main makes the build depend on when it ran.
+#
+# TEMPORARY: commented out along with the dependency above, for the same
+# reason - see src/pet_agent/_service_core_shim/__init__.py.
+# [tool.uv.sources]
+# fyrm-service-core = { git = "https://github.com/fyrm-ai/fyrm-service-core.git", tag = "v0.2.0" }

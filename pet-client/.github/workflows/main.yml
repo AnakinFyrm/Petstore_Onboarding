@@ -1,0 +1,124 @@
+name: Main
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# One run per ref: a new push supersedes the previous run instead of queueing
+# next to it. PR refs (refs/pull/N/merge) are distinct per PR, so a superseded
+# run never takes another PR or a main build down with it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege for every job in this file; only the image build raises it.
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    # Long enough for a cold pre-commit hook install, short enough that a hung
+    # step does not hold a runner for the six-hour default.
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Run checks
+        run: make check
+
+  # commitizen derives the next version and the changelog from commit messages,
+  # so a non-conventional message is caught here instead of at release time.
+  commit-lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # cz walks a commit range, which the default shallow clone lacks.
+          fetch-depth: 0
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      # An explicit base..head range rather than HEAD: on pull_request HEAD is
+      # GitHub's generated merge commit, whose message is never conventional.
+      - name: Check commit messages
+        run: uv run cz check --rev-range ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  tests-and-type-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        python-version: ["3.14"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    # At job level so a step-level `if` can test it; the secrets context itself is
+    # not available in `if`.
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Run tests
+        run: uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml
+
+      - name: Check typing
+        run: uv run mypy
+
+      # Skipped until CODECOV_TOKEN exists, so a freshly generated repository is
+      # green on its first push instead of failing on an integration nobody has
+      # set up yet.
+      - name: Upload coverage reports to Codecov
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v7
+
+  check-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          github-token: ${{ secrets.GH_DEP_TOKEN }}
+
+      - name: Check if documentation can be built
+        run: uv run mkdocs build -s

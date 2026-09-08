@@ -1,0 +1,792 @@
+<title>Agentic Petstore 解剖手册</title>
+<meta name="description" content="逐模块拆解 pet 项目：petstore-api / pet-client / pet-mcp / pet-aes / pet-agent 的职责边界与关键代码">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+
+<style>
+  :root{
+    --paper:#efede6;
+    --card:#fbfaf6;
+    --card-2:#f4f2ea;
+    --ink:#20241f;
+    --ink-soft:#3b3e35;
+    --muted:#6e6a5c;
+    --line:#d9d4c4;
+    --line-strong:#c7c1ac;
+    --accent:#3c6e52;
+    --accent-ink:#f4f8f4;
+    --accent-soft:#e2ede5;
+    --warn:#b5562a;
+    --warn-soft:#f6e6dc;
+    --shadow: 0 1px 2px rgba(32,36,31,.06), 0 8px 24px -16px rgba(32,36,31,.25);
+    --radius: 12px;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --serif: "Source Serif 4", Georgia, "Songti SC", serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#14170f;
+      --card:#1b1f17;
+      --card-2:#1f2419;
+      --ink:#e9e6d8;
+      --ink-soft:#c9c4b0;
+      --muted:#9a9683;
+      --line:#333629;
+      --line-strong:#454833;
+      --accent:#7bb894;
+      --accent-ink:#0e1610;
+      --accent-soft:#213229;
+      --warn:#e08a54;
+      --warn-soft:#3a2418;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 28px -18px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#14170f;
+    --card:#1b1f17;
+    --card-2:#1f2419;
+    --ink:#e9e6d8;
+    --ink-soft:#c9c4b0;
+    --muted:#9a9683;
+    --line:#333629;
+    --line-strong:#454833;
+    --accent:#7bb894;
+    --accent-ink:#0e1610;
+    --accent-soft:#213229;
+    --warn:#e08a54;
+    --warn-soft:#3a2418;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 28px -18px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.6;
+    font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft); }
+
+  h1,h2,h3,h4{
+    font-family:var(--serif);
+    color:var(--ink);
+    font-weight:650;
+    text-wrap:balance;
+    margin:0;
+  }
+  a{ color:var(--accent); }
+  code, pre, .mono{ font-family:var(--mono); }
+
+  .wrap{ max-width:920px; margin:0 auto; padding:0 24px 96px; }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{
+    max-width:920px; margin:0 auto; padding:12px 24px;
+    display:flex; align-items:center; gap:18px;
+  }
+  .topbar-mark{
+    font-family:var(--mono); font-weight:600; font-size:.82rem;
+    color:var(--accent); white-space:nowrap;
+    letter-spacing:.02em;
+  }
+  .topbar-nav{
+    display:flex; gap:4px; overflow-x:auto; scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .topbar-nav::-webkit-scrollbar{ display:none; }
+  .topbar-nav a{
+    flex:none;
+    font-family:var(--mono); font-size:.76rem; text-decoration:none;
+    color:var(--muted); padding:6px 10px; border-radius:999px;
+    border:1px solid transparent; white-space:nowrap;
+  }
+  .topbar-nav a:hover{ color:var(--ink); border-color:var(--line); }
+
+  /* ---------- hero ---------- */
+  .hero{ padding:56px 0 36px; }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:.76rem; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--accent);
+    margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:""; width:7px; height:7px; border-radius:50%;
+    background:var(--accent); display:inline-block;
+  }
+  .hero h1{ font-size:clamp(2.1rem, 4.4vw, 3.1rem); line-height:1.08; }
+  .hero p.lede{
+    font-size:1.08rem; color:var(--ink-soft); max-width:62ch;
+    margin-top:16px;
+  }
+  .hero-meta{
+    display:flex; flex-wrap:wrap; gap:10px; margin-top:26px;
+  }
+  .pill{
+    font-family:var(--mono); font-size:.76rem; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:5px 12px;
+    background:var(--card);
+  }
+
+  /* ---------- architecture diagram ---------- */
+  .diagram-card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:8px 8px 4px; margin:34px 0 8px;
+    overflow-x:auto;
+  }
+  .diagram-card .mermaid{ min-width:640px; }
+  .diagram-caption{
+    font-family:var(--mono); font-size:.74rem; color:var(--muted);
+    text-align:center; margin:10px 0 40px;
+  }
+
+  /* ---------- generic section rhythm ---------- */
+  section.module{ padding-top:64px; scroll-margin-top:70px; border-top:1px solid var(--line); }
+  section.module:first-of-type{ border-top:none; }
+  .module-head{ display:flex; flex-direction:column; gap:10px; margin-bottom:28px; }
+  .module-kicker{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  }
+  .module-num{
+    font-family:var(--mono); color:var(--accent); font-size:.85rem; font-weight:600;
+  }
+  .module-path{
+    font-family:var(--mono); font-size:.85rem; color:var(--muted);
+    background:var(--card-2); border:1px solid var(--line); border-radius:6px;
+    padding:2px 8px;
+  }
+  .module-head h2{ font-size:1.7rem; }
+  .module-role{ color:var(--ink-soft); font-size:1.02rem; max-width:68ch; }
+
+  .file-table{
+    width:100%; border-collapse:collapse; margin:18px 0 30px;
+    font-size:.88rem;
+  }
+  .file-table th{
+    text-align:left; font-family:var(--mono); font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.05em; color:var(--muted); font-weight:500;
+    border-bottom:1px solid var(--line-strong); padding:0 10px 8px 0;
+  }
+  .file-table td{
+    padding:9px 10px 9px 0; border-bottom:1px solid var(--line); vertical-align:top;
+  }
+  .file-table tr:last-child td{ border-bottom:none; }
+  .file-table code{ font-size:.82rem; color:var(--accent); }
+
+  h3.sub{
+    font-size:1.18rem; margin-top:36px; margin-bottom:6px;
+    display:flex; align-items:center; gap:10px;
+  }
+  h3.sub .file-chip{
+    font-family:var(--mono); font-size:.74rem; font-weight:500; color:var(--muted);
+    background:var(--card-2); border:1px solid var(--line); border-radius:6px; padding:2px 8px;
+  }
+  section.module p{ margin:12px 0; color:var(--ink-soft); max-width:70ch; }
+  section.module p strong{ color:var(--ink); font-weight:600; }
+  section.module ul{ margin:12px 0; padding-left:1.3em; color:var(--ink-soft); max-width:70ch; }
+  section.module li{ margin:6px 0; }
+  section.module li strong{ color:var(--ink); }
+
+  /* ---------- code blocks ---------- */
+  .code-block{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    box-shadow:var(--shadow); margin:16px 0 22px; overflow:hidden;
+  }
+  .code-block__bar{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--mono); font-size:.74rem; color:var(--muted);
+    padding:8px 14px; border-bottom:1px solid var(--line); background:var(--card-2);
+  }
+  .code-block__bar .dots{ display:flex; gap:5px; }
+  .code-block__bar .dots span{ width:7px; height:7px; border-radius:50%; background:var(--line-strong); display:inline-block; }
+  .code-block pre{
+    margin:0; padding:14px 16px; overflow-x:auto; font-size:.81rem; line-height:1.65;
+  }
+  .code-block code{ font-family:var(--mono); background:none; }
+  .code-block pre::-webkit-scrollbar{ height:8px; }
+
+  /* hljs token colors, tied to palette */
+  .hljs-comment,.hljs-quote{ color:var(--muted); font-style:italic; }
+  .hljs-keyword,.hljs-selector-tag,.hljs-literal{ color:var(--accent); font-weight:600; }
+  .hljs-string,.hljs-doctag{ color:#8a6a3d; }
+  :root[data-theme="dark"] .hljs-string,:root[data-theme="dark"] .hljs-doctag{ color:#d8b979; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .hljs-string,:root:not([data-theme="light"]) .hljs-doctag{ color:#d8b979; } }
+  .hljs-title,.hljs-title.function_,.hljs-title.class_{ color:var(--warn); font-weight:600; }
+  .hljs-number{ color:#7a6fb0; }
+  .hljs-built_in,.hljs-type{ color:#4177a6; }
+  :root[data-theme="dark"] .hljs-built_in,:root[data-theme="dark"] .hljs-type{ color:#82b3e0; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .hljs-built_in,:root:not([data-theme="light"]) .hljs-type{ color:#82b3e0; } }
+  .hljs-params,.hljs-variable{ color:var(--ink-soft); }
+  .hljs-attr,.hljs-attribute{ color:var(--accent); }
+
+  /* ---------- callouts ---------- */
+  .callout{
+    border:1px solid var(--line); border-left:4px solid var(--accent);
+    background:var(--accent-soft); border-radius:8px;
+    padding:14px 16px; margin:20px 0; max-width:70ch;
+  }
+  .callout p{ color:var(--ink-soft); margin:6px 0 0; }
+  .callout .callout-label{
+    font-family:var(--mono); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--accent); font-weight:600;
+  }
+  .callout.bug{ border-left-color:var(--warn); background:var(--warn-soft); }
+  .callout.bug .callout-label{ color:var(--warn); }
+
+  .flow-steps{ counter-reset:step; margin:16px 0; padding:0; list-style:none; max-width:70ch; }
+  .flow-steps li{
+    counter-increment:step; position:relative; padding:2px 0 2px 34px; margin:10px 0;
+    color:var(--ink-soft);
+  }
+  .flow-steps li::before{
+    content:counter(step); position:absolute; left:0; top:0;
+    width:22px; height:22px; border-radius:50%; background:var(--card-2);
+    border:1px solid var(--line-strong); color:var(--ink);
+    font-family:var(--mono); font-size:.72rem; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .flow-steps li strong{ color:var(--ink); }
+
+  /* ---------- issues section ---------- */
+  .issue-card{
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--warn);
+    border-radius:10px; box-shadow:var(--shadow); padding:18px 20px; margin:18px 0;
+  }
+  .issue-card h4{ font-size:1.05rem; display:flex; align-items:center; gap:8px; }
+  .issue-severity{
+    font-family:var(--mono); font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+    background:var(--warn); color:#fff8f2; padding:2px 8px; border-radius:999px;
+  }
+  .issue-severity.low{ background:var(--muted); }
+  .issue-card p{ color:var(--ink-soft); margin:8px 0; }
+  .issue-card .fix-label{ font-family:var(--mono); font-size:.72rem; color:var(--accent); text-transform:uppercase; letter-spacing:.05em; margin-top:12px; }
+
+  /* ---------- footer ---------- */
+  footer{
+    margin-top:80px; padding-top:24px; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:.78rem; color:var(--muted);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media (max-width:640px){
+    .wrap{ padding:0 16px 72px; }
+    .hero{ padding:40px 0 28px; }
+    footer{ flex-direction:column; }
+  }
+</style>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <span class="topbar-mark">pet/</span>
+    <nav class="topbar-nav">
+      <a href="#architecture">架构</a>
+      <a href="#petstore-api">petstore-api</a>
+      <a href="#pet-client">pet-client</a>
+      <a href="#pet-mcp">pet-mcp</a>
+      <a href="#pet-aes">pet-aes</a>
+      <a href="#pet-agent">pet-agent</a>
+      <a href="#orchestration">编排</a>
+      <a href="#issues">发现的问题</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div class="eyebrow">代码解剖手册 · C:\Users\ZhuanZ\Desktop\pet</div>
+    <h1>Agentic Petstore 是怎么拼起来的</h1>
+    <p class="lede">
+      桌面上的 <code>pet</code> 文件夹不是一个项目，是五个各自独立、职责边界很硬的 Python 项目，
+      外加一份把它们钉在一起的 Docker Compose。下面按数据从数据库流到你屏幕上的顺序，
+      把每一层实际做的事、以及做这件事的代码，拆给你看。
+    </p>
+    <div class="hero-meta">
+      <span class="pill">5 个 UV 管理的 Python 3.14 子项目</span>
+      <span class="pill">FastAPI + PostgreSQL</span>
+      <span class="pill">MCP (stdio) 工具协议</span>
+      <span class="pill">Pydantic AI agent</span>
+      <span class="pill">3 个 Docker 容器</span>
+    </div>
+  </section>
+
+  <div id="architecture"></div>
+  <div class="diagram-card">
+    <pre class="mermaid">
+flowchart TD
+    CLI["cli.py<br/><span style='font-size:11px'>交互式终端对话</span>"] --> AES["HostedAgentService<br/><span style='font-size:11px'>pet-aes/service.py</span>"]
+    AES --> AG["Pydantic AI Agent<br/><span style='font-size:11px'>pet-agent/agent.py</span>"]
+    AG -->|"生成回复"| LLM[("LLM 后端<br/>OpenRouter 兼容")]
+    AG -->|"MCP · stdio 子进程"| MCP["pet-mcp/server.py<br/><span style='font-size:11px'>3 个工具</span>"]
+    MCP --> PC["PetstoreClient<br/><span style='font-size:11px'>pet-client</span>"]
+    PC -->|"HTTP"| API["petstore-api<br/><span style='font-size:11px'>FastAPI</span>"]
+    API --> DB[("PostgreSQL")]
+
+    classDef default fill:#fbfaf6,stroke:#c7c1ac,stroke-width:1px,color:#20241f,font-family:IBM Plex Sans,rx:8,ry:8;
+    classDef db fill:#e2ede5,stroke:#3c6e52,stroke-width:1px,color:#20241f;
+    class DB,LLM db;
+    </pre>
+  </div>
+  <p class="diagram-caption">Agent 永远不直接碰 petstore-api / 数据库；CLI 永远不直接碰 Agent —— 每一箭头都是一层被强制的边界，不是约定。</p>
+
+  <section class="module">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">01</span><span class="module-path">petstore-api/</span></div>
+      <h2>petstore-api — 数据唯一的真源</h2>
+      <p class="module-role">给定的 FastAPI + PostgreSQL 应用（被轻度扩展）。全系统里唯一被允许读写数据库的组件；所有校验规则在这一层用 Pydantic 强制执行，坏数据在到数据库之前就被拒绝。</p>
+    </div>
+
+    <table class="file-table">
+      <tr><th>文件</th><th>作用</th></tr>
+      <tr><td><code>app/config.py</code></td><td>一个 <code>Settings</code>，从 <code>.env</code> 读 <code>database_url</code>，10 行。</td></tr>
+      <tr><td><code>app/database.py</code></td><td>建表 DDL + 连接/事务管理（<code>psycopg</code>，同步）。</td></tr>
+      <tr><td><code>app/models.py</code></td><td>两个字符串枚举：<code>Species</code>、<code>Availability</code>。</td></tr>
+      <tr><td><code>app/schemas.py</code></td><td>Pydantic 模型 + 所有业务校验规则（真正的核心）。</td></tr>
+      <tr><td><code>app/crud.py</code></td><td>手写参数化 SQL：搜索、查询、创建、购买。</td></tr>
+      <tr><td><code>app/main.py</code></td><td>FastAPI 路由，把 crud 的异常翻译成 HTTP 状态码。</td></tr>
+      <tr><td><code>app/seed.py</code></td><td>首次启动时灌入 8 条示例宠物数据。</td></tr>
+    </table>
+
+    <h3 class="sub">校验规则写在模型里，不写在业务代码里 <span class="file-chip">app/schemas.py</span></h3>
+    <p>
+      <code>PetBase</code> 用 <code>Field(min_length=…)</code>、<code>ge=</code>、<code>gt=</code> 这类约束，把 README 里罗列的每一条规则
+      （名字 2–50 字符、体重 &gt; 0、尾长 ≥ 1、价格 &gt; 0……）直接写进类型定义。三个自定义校验器补上纯类型标注做不到的逻辑：
+    </p>
+    <div class="code-block">
+      <div class="code-block__bar"><span>app/schemas.py</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">@field_validator("tags", mode="before")
+@classmethod
+def normalize_tags(cls, tags: list[str]) -> list[str]:
+    seen: dict[str, str] = {}
+    for tag in tags:
+        cleaned = tag.strip()
+        if not cleaned:
+            raise ValueError("Tags may not be blank.")
+        key = cleaned.lower()
+        if key in seen:
+            raise ValueError(f"Duplicate tag: {cleaned}")
+        seen[key] = cleaned
+    return list(seen.values())
+
+@model_validator(mode="after")
+def species_requires_specific_species(self) -> "PetBase":
+    if self.species == Species.other and not self.specific_species:
+        raise ValueError("A specific species is required when species is 'other'.")
+    return self</code></pre>
+    </div>
+    <p>
+      <code>normalize_tags</code> 用一个 <code>dict</code>（而不是 <code>set</code>）去重，是为了在拒绝重复标签的同时保留标签原本的大小写和出现顺序——
+      <code>key</code> 只用来判重，真正存回去的是 <code>seen[key]</code> 里那个原始字符串。
+      <code>species_requires_specific_species</code> 是一条跨字段规则：只有当 <code>species == other</code>（比如示例数据里的刺猬 Sprout）时才强制要求 <code>specific_species</code>。
+    </p>
+    <p>
+      <code>PetSearch</code> 里还有一条容易漏掉的一致性检查：<code>min_age_months</code> 不能大于 <code>max_age_months</code>，价格区间同理——
+      这条规则如果不在这里挡住，会变成一次注定查不出结果、却不会报错的搜索。
+    </p>
+
+    <h3 class="sub">购买是「查库存 → 建订单 → 改状态」三步事务 <span class="file-chip">app/crud.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>app/crud.py</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">def purchase_pet(conn: Connection, pet_id: int) -> PetRow:
+    pet = get_pet(conn, pet_id)
+    if pet["availability"] != "available":
+        raise PetNotAvailableError(f"Pet {pet_id} is not available for purchase.")
+
+    order = conn.execute(
+        "INSERT INTO orders (pet_id, price_eur) VALUES (%(pet_id)s, %(price_eur)s) RETURNING *",
+        {"pet_id": pet_id, "price_eur": pet["price_eur"]},
+    ).fetchone()
+
+    conn.execute(
+        "UPDATE pets SET availability = 'sold' WHERE id = %(id)s",
+        {"id": pet_id},
+    )
+    return order</code></pre>
+    </div>
+    <p>
+      注意订单里的 <code>price_eur</code> 是从刚查出来的 <code>pet["price_eur"]</code> 取的，从不接受调用方传入的价格——
+      这是「价格永远只能来自商店」这条规则在数据库这一层的落地。<code>db_session()</code>（<code>database.py</code>）用
+      <code>try/except/finally</code> 包住这两条 SQL：任何一步出错就整体 <code>rollback()</code>，不会出现「订单建了、库存却没改」的半成品状态。
+    </p>
+    <p>
+      <code>list_pets</code> 用字符串拼接生成 SQL 的 <code>WHERE</code> 子句，但拼的只是列名和条件片段，真正的值全部走 <code>%(name)s</code> 参数占位符——
+      这就是为什么它头顶那行 <code># noqa: S608</code> 注释敢说「标识符是静态的，值是参数化的」，可以安全地关掉 SQL 注入检查。
+    </p>
+
+    <h3 class="sub">FastAPI 只做一件事：把内部异常翻成状态码 <span class="file-chip">app/main.py</span></h3>
+    <p>
+      七个路由里最值得看的是异常映射：<code>PetNotFoundError → 404</code>，<code>PetNotAvailableError → 409</code>，
+      <code>PetSearch</code> 构造失败 → <code>422</code>。<code>lifespan()</code> 用 <code>run_in_threadpool</code> 在应用启动时依次跑
+      <code>init_db()</code>（建表）和 <code>seed_if_empty()</code>（灌种子数据），因为这两个函数底层是同步的
+      <code>psycopg</code> 调用，直接在异步的 lifespan 里跑会卡住事件循环。
+    </p>
+  </section>
+
+  <section class="module" id="pet-client">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">02</span><span class="module-path">pet-client/</span></div>
+      <h2>pet-client — 唯一懂 HTTP 细节的地方</h2>
+      <p class="module-role">全系统里（除 petstore-api 自己）唯一知道 petstore-api 的 URL、HTTP 动词和状态码的模块。它的存在就是为了让上层（MCP 服务器）永远不用碰 <code>httpx</code>。</p>
+    </div>
+
+    <table class="file-table">
+      <tr><th>文件</th><th>作用</th></tr>
+      <tr><td><code>models.py</code></td><td>镜像 petstore-api 的 Pydantic 模型（故意不共享 import）。</td></tr>
+      <tr><td><code>exceptions.py</code></td><td>把 HTTP 状态码翻译成 Petstore 语义的异常。</td></tr>
+      <tr><td><code>client.py</code></td><td>基于 <code>httpx.AsyncClient</code> 的三个方法：搜索、查询、购买。</td></tr>
+    </table>
+
+    <p>
+      <code>models.py</code> 的文件头注释解释了一个容易让人疑惑的设计：为什么不干脆 <code>from app.schemas import Pet</code> 直接复用？
+      因为 pet-client 和 petstore-api 是两个独立部署单元（未来是两个容器），运行时根本不共享 Python 解释器——
+      它们唯一共享的是「通过 HTTP 传输的数据形状」，所以这里手写了一份结构相同、但完全独立的模型副本。
+    </p>
+
+    <h3 class="sub">状态码 → 语义异常的翻译表 <span class="file-chip">client.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>client.py · _request()</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">try:
+    response = await self._http.request(method, path, **kwargs)
+except httpx.RequestError as exc:
+    raise StoreUnavailableError(f"Could not reach petstore API: {exc}") from exc
+
+if response.status_code == 404:
+    if not_found_pet_id is not None:
+        raise PetNotFoundError(not_found_pet_id)
+    raise StoreUnavailableError(f"Unexpected 404 from petstore API: {path}")
+
+if response.status_code == 409:
+    if not_found_pet_id is not None:
+        raise PetNotAvailableError(not_found_pet_id)
+    raise PurchaseFailedError(response.text)
+
+if response.status_code == 422:
+    raise InvalidRequestError(response.text)
+
+if response.status_code >= 500:
+    raise StoreUnavailableError(f"Petstore API returned {response.status_code}: {response.text}")</code></pre>
+    </div>
+    <p>
+      调用方（MCP 服务器）从此只需要认识 <code>PetNotFoundError</code>、<code>PetNotAvailableError</code>、<code>InvalidRequestError</code>、
+      <code>StoreUnavailableError</code>、<code>PurchaseFailedError</code> 这五个类，永远不用处理 <code>httpx.HTTPStatusError</code> 或裸的连接异常。
+      这正是 agent 能「诚实地解释失败」的前提——失败原因在很早的一层就已经被归类成了人能理解的语言。
+    </p>
+    <p>
+      构造函数里 <code>transport</code> 参数的注释值得一读：它是专门给测试开的口子（换成 <code>httpx.MockTransport</code> 让请求不真的上网），
+      并且解释了一个 httpx 的坑——必须在构造 <code>AsyncClient</code> 时就传入 <code>transport</code>，事后重新赋值 <code>self._http._transport</code>
+      是不生效的，因为 httpx 还有一张独立的 <code>_mounts</code> 代理路由表会抢在默认 transport 前面被查询。
+    </p>
+  </section>
+
+  <section class="module" id="pet-mcp">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">03</span><span class="module-path">pet-mcp/</span></div>
+      <h2>pet-mcp — 暴露给 agent 的三个工具，仅此而已</h2>
+      <p class="module-role">一个跑在 stdio 上的 MCP 服务器（<code>src/pet_mcp/server.py</code>，222 行）。它是 agent 触达 Petstore 的唯一入口，只导出三个工具，且购买工具本身带着一道代码写死的确认关卡。</p>
+    </div>
+
+    <h3 class="sub">购买确认关卡在代码里，不只在 docstring 里 <span class="file-chip">server.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>server.py · pet_mcp_purchase_pet()</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">@mcp.tool(annotations=_PURCHASE_ANNOTATIONS)
+async def pet_mcp_purchase_pet(pet_id: int, confirm: bool) -> dict[str, Any]:
+    if not confirm:
+        raise ToolError(
+            "CONFIRMATION_REQUIRED: call pet_mcp_get_pet first to show the customer this "
+            "pet's current name, price and availability, get their explicit confirmation to "
+            "buy it at that price, then call pet_mcp_purchase_pet again with confirm=True."
+        )
+    try:
+        async with _petstore_client() as client:
+            order = await client.purchase_pet(pet_id)
+    except PetNotFoundError as exc:
+        raise ToolError(f"PET_NOT_FOUND: {exc}") from exc
+    except PetNotAvailableError as exc:
+        raise ToolError(f"PET_NOT_AVAILABLE: {exc}") from exc
+    ...
+    return order.model_dump(mode="json")</code></pre>
+    </div>
+    <p>
+      这里的关键在于 <code>if not confirm: raise ToolError(...)</code> 这一行是执行到的代码，不是写给模型看的说明文字——
+      就算 LLM 完全没理会 docstring 里那一大段「必须先展示价格再确认」的指示、直接用 <code>confirm=False</code>（或者压根不传）调用，
+      购买依然会在这里被硬拦下来，什么都买不成。三个工具各自的用途：
+    </p>
+    <ul>
+      <li><strong>pet_mcp_search_pets</strong> — 按任意条件组合搜索/列出宠物；不传参数就是列出全部库存。</li>
+      <li><strong>pet_mcp_get_pet</strong> — 拿一只宠物「此刻」的价格和可购买状态；docstring 明确要求在展示价格前、以及购买前都要重新调用一次，因为对话里记住的状态可能已经过期。</li>
+      <li><strong>pet_mcp_purchase_pet</strong> — 上面这段代码；扣的价格永远是 petstore-api 当下记录的价格，这个工具没有任何办法接受调用方传入的价格。</li>
+    </ul>
+    <p>
+      工具还各自带了 <code>ToolAnnotations</code>：只读工具标 <code>readOnlyHint=True, idempotentHint=True</code>（可以放心反复调用），
+      购买工具反过来标 <code>destructiveHint=True, idempotentHint=False</code>（会改变商店状态，不能被无副作用地重试）——
+      这是 MCP 协议里客户端用来判断「这个工具能不能安全重试」的标准标注方式。
+    </p>
+  </section>
+
+  <section class="module" id="pet-aes">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">04</span><span class="module-path">pet-aes/</span></div>
+      <h2>pet-aes — 跟宠物店本身无关的「agent 运行时」</h2>
+      <p class="module-role">通用、可复用的 agent 基础设施，只有两个核心模块：<code>agents.py</code>（怎么把声明变成一个 <code>pydantic_ai.Agent</code>）和 <code>service.py</code>（怎么安全地运行它）。改编自组织内部一个真实在跑的 AES 参考实现。</p>
+    </div>
+
+    <h3 class="sub">AgentSpec：一个 agent 的全部定义写在一处 <span class="file-chip">agents.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>agents.py</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">@dataclass(frozen=True)
+class AgentSpec:
+    name: str
+    prompt_path: Path
+    tools: tuple[str, ...] = ()
+    optional_tools: tuple[str, ...] = ()
+    output_schema: type[BaseModel] | None = None
+    description: str = ""
+    subagents: tuple[str, ...] = ()
+
+    @property
+    def declared_tools(self) -> frozenset[str]:
+        return frozenset(self.tools) | frozenset(self.optional_tools)</code></pre>
+    </div>
+    <p>
+      <code>tools</code> 是「必须存在，缺了就报错」的本地工具名；<code>optional_tools</code> 是「有就用，没有就悄悄跳过」——
+      pet-agent 用的正是 <code>optional_tools</code>，因为它的三个工具全部来自一个启动时可能连不上的 MCP 子进程。
+    </p>
+
+    <h3 class="sub">真正的安全边界：把 MCP toolset 过滤到白名单 <span class="file-chip">agents.py · _filtered_toolsets()</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>agents.py</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">def _filtered_toolsets(spec: AgentSpec, toolsets: Sequence[AbstractToolset[Any]]) -> list[AbstractToolset[Any]]:
+    allowed = spec.declared_tools
+
+    def _allow(_ctx: RunContext[Any], tool_def: ToolDefinition) -> bool:
+        return tool_def.name in allowed
+
+    return [ts.filtered(_allow) for ts in toolsets]</code></pre>
+    </div>
+    <div class="callout">
+      <span class="callout-label">为什么这段代码是全项目的安全核心</span>
+      <p>
+        MCP 服务器暴露多少工具，agent 能用多少工具，这两件事被这四行代码彻底解耦了。就算 pet-mcp 以后被改成暴露 20 个工具，
+        <code>_filtered_toolsets</code> 也只会放行 <code>PETSTORE_AGENT_SPEC.optional_tools</code> 里声明过的那三个名字——
+        agent 不会「顺带」获得新能力，除非有人显式改动 pet-agent 自己的 spec。这就是 README 说的
+        「pet-mcp 以后暴露更多工具，也永远不能悄悄扩大 agent 的能力」在代码里的样子。
+      </p>
+    </div>
+
+    <h3 class="sub">HostedAgentService：一次对话的运行边界 <span class="file-chip">service.py</span></h3>
+    <p>
+      <code>handle_message(message, session_id=...)</code> 是外部唯一能调用的入口：它自动把某个 <code>session_id</code>
+      之前的 <code>ModelMessage</code> 历史续上、调用 <code>agent.run()</code>、把最新历史存回 <code>self._histories</code> 字典、
+      返回 <code>result.output</code>。任何异常都在这里被 <code>except Exception: self._logger.exception(...)</code> 兜住，
+      换成一句 <code>DEFAULT_FALLBACK_MESSAGE</code>（“Sorry, something went wrong on our end…”）——
+      调用方（CLI）永远看不到裸异常、堆栈、或者可能带密钥的内部报错。<code>request_limit</code> 会变成
+      <code>UsageLimits(request_limit=10)</code>，给「模型想犯糊涂、工具调用无限循环」这件事设了个硬上限。
+    </p>
+  </section>
+
+  <section class="module" id="pet-agent">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">05</span><span class="module-path">pet-agent/</span></div>
+      <h2>pet-agent — 真正的购物助手 + 你敲命令的地方</h2>
+      <p class="module-role">五个项目里最大的一个：既是把 <code>PETSTORE_AGENT_SPEC</code> 交给 pet-aes 托管的 agent 定义，也是你在终端里打字的那个 CLI，外加配置、多 LLM 后端、日志和遥测。</p>
+    </div>
+
+    <h3 class="sub">agent.py：一个 spec + 一个 stdio 子进程 <span class="file-chip">agent.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>agent.py</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">PETSTORE_AGENT_SPEC = AgentSpec(
+    name="petstore-agent",
+    prompt_path=_PROMPTS_DIR / "system.md",
+    optional_tools=(
+        "pet_mcp_search_pets",
+        "pet_mcp_get_pet",
+        "pet_mcp_purchase_pet",
+    ),
+    description="Conversational Petstore shopping assistant: helps a customer browse, filter, and buy pets.",
+)
+
+def build_pet_mcp_toolset(settings: Settings) -> MCPToolset:
+    env = {**os.environ, "PETSTORE_API_BASE_URL": settings.petstore_api_base_url}
+    transport = StdioTransport(
+        command="uv",
+        args=["run", "--project", settings.pet_mcp_project_dir, "pet-mcp"],
+        env=env,
+    )
+    return MCPToolset(transport)</code></pre>
+    </div>
+    <p>
+      这个模块自己没有任何 <code>@agent.tool</code> 本地函数，也从不 <code>import pet_mcp</code> 或 <code>pet_client</code>——
+      「agent 只能通过 MCP 服务器操作、不得绕开它」这条规则不是靠自觉遵守，而是代码结构上就没给绕开留出口子。
+      <code>build_pet_mcp_toolset</code> 用 <code>uv run --project &lt;pet-mcp 目录&gt; pet-mcp</code> 把 pet-mcp 整个当子进程拉起来，
+      并显式透传完整的父进程环境变量——因为 MCP 的 stdio 传输默认只继承一个很小的“安全变量”子集，在 Windows 上尤其不够用，
+      这也解释了为什么这台机器上这个项目能正常跑通。
+    </p>
+
+    <h3 class="sub">config.py：三层环境变量叠加 + 「LLM 是否真的可用」判定 <span class="file-chip">config.py</span></h3>
+    <div class="code-block">
+      <div class="code-block__bar"><span>config.py · Settings.llm_enabled</span><div class="dots"><span></span><span></span><span></span></div></div>
+      <pre><code class="language-python">@property
+def llm_enabled(self) -> bool:
+    backend = self.llm_backend.strip().lower()
+    if backend == "anthropic":
+        return self.anthropic_api_key is not None
+    if backend in {"openai", "openai_compat"}:
+        return bool(self.llm_model) and (self.openai_api_key is not None or bool(self.openai_base_url))
+    if backend == "azure":
+        return all((
+            self.azure_openai_api_key is not None,
+            self.azure_openai_endpoint,
+            self.azure_openai_deployment,
+        ))
+    return False</code></pre>
+    </div>
+    <p>
+      配置本身按优先级叠三层：真实进程环境变量 &gt; <code>.env.$APP_ENV</code>（按 <code>dev/test/production</code> 选定的档案）&gt;
+      <code>.env.shared</code>（提交进仓库的、不含密钥的公共默认值）。<code>llm_enabled</code> 把「关闭」和「配置不全」并成同一种
+      「没准备好」状态，好处是服务永远只有一种安全的降级模式，而不是在第一次真正调用 LLM 时才崩溃。
+      README 里提到的「已知偏差」也在这里能对上号：<code>LLM_BACKEND=openai_compat</code> + <code>OPENAI_BASE_URL=https://openrouter.ai/api/v1</code>，
+      走的是 OpenAI 兼容协议直连 OpenRouter，而不是文档原本要求的 Litellm 代理。
+    </p>
+
+    <h3 class="sub">llm/client.py：一个工厂函数，四个可选后端 <span class="file-chip">llm/client.py</span></h3>
+    <p>
+      <code>create_llm(settings)</code> 按 <code>llm_backend</code> 的值分发到 <code>_build_anthropic</code> / <code>_build_openai</code>
+      （同时覆盖 <code>openai</code> 和 <code>openai_compat</code> 两个值） / <code>_build_azure</code>，每个都返回一个
+      <code>pydantic_ai.models.Model</code>。它<strong>从不抛异常</strong>：任何一个构建函数失败，都会被外层 <code>except Exception</code>
+      捕住、记一条 warning、返回 <code>None</code>——调用方（<code>agent.py</code> 的 <code>run_agent</code>）自己决定「模型是 None」该怎么办
+      （目前是直接 <code>RuntimeError</code> 拒绝启动）。<code>pydantic_ai</code> 相关的 import 全部写在函数体内部而不是模块顶部，
+      这样即使没装某个 provider 的可选依赖，这个文件本身依然能被正常 import、单元测试也能正常跑。
+    </p>
+
+    <h3 class="sub">system.md：模型被允许做什么、绝不允许做什么 <span class="file-chip">llm/prompts/system.md</span></h3>
+    <p>系统提示词把「购买」拆成一个五步、每次都要重新来一遍的固定流程：</p>
+    <ol class="flow-steps">
+      <li><strong>锁定对象</strong> —— 顾客指向一只具体的宠物。</li>
+      <li><strong>重新查询</strong> —— 调用 <code>pet_mcp_get_pet</code> 拿最新数据，哪怕上一秒才查过一次。</li>
+      <li><strong>展示当下事实</strong> —— 把刚查到的名字、价格、可购买状态说给顾客听。</li>
+      <li><strong>要求明确确认</strong> —— 「听起来不错」「我可能会买」都不算数，只有针对具体宠物和价格的明确肯定才算。</li>
+      <li><strong>确认之后才下单</strong> —— 且只对刚确认的那一只下单。</li>
+    </ol>
+    <p>
+      提示词里还有一条经常被写代码的人忽略、但对「诚实」至关重要的规定：<em>「除非购买工具刚刚返回了这个结果，否则永远不要说购买成功、
+      报出订单号、或描述收据」</em>——这直接堵死了模型在工具调用失败后凭空编一个「已为您下单」的可能性。
+    </p>
+
+    <h3 class="sub">cli.py：欢迎语、退出词、一个 while 循环 <span class="file-chip">cli.py</span></h3>
+    <p>
+      CLI 本身完全不决定任何 Petstore 相关的事——它只负责三件事：打印 <code>WELCOME</code>、识别
+      <code>exit/quit/q/:q/bye/goodbye</code> 这几个退出词、把每一行非空输入转发给
+      <code>service.handle_message(message, session_id=...)</code> 并原样打印回复。展示宠物列表、报价、
+      要求确认、收据或失败说明——这些全部发生在 <code>service.handle_message</code> 内部，<code>cli.py</code> 自己不格式化、不判断。
+    </p>
+
+    <div class="callout bug">
+      <span class="callout-label">⚠ 发现一处会导致程序无法启动的语法错误</span>
+      <p><code>run_dialogue()</code> 里捕获 Ctrl-D / Ctrl-C 的那一行写成了：</p>
+      <pre style="margin:10px 0;background:var(--card-2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow-x:auto;"><code class="language-python" style="font-size:.8rem;">except EOFError, KeyboardInterrupt:</code></pre>
+      <p>
+        这是 Python 2 的写法，在 Python 3（这个项目锁定的 3.14）里是 <code>SyntaxError</code>：多个异常类型必须用括号包起来。
+        实测用 <code>ast.parse()</code> 解析这个文件会直接报错 <code>multiple exception types must be parenthesized</code>——
+        也就是说，<strong>整个 <code>pet_agent.cli</code> 模块现在导入不了，<code>docker compose run --rm pet-agent</code> 会在启动阶段就崩掉</strong>。
+      </p>
+      <p class="fix-label">修复方式：把这一行改成 <code>except (EOFError, KeyboardInterrupt):</code>（加一对括号）。</p>
+    </div>
+
+    <h3 class="sub">alerting.py / observability.py / logging_config.py</h3>
+    <p>
+      这三个是运维基础设施，跟 Petstore 业务逻辑没有关系：<code>alerting.py</code> 定义了一个 <code>Alerter</code> 协议
+      （默认实现 <code>LogAlerter</code> 只是把告警写进日志，未来可以换成 Slack/PagerDuty 而不用改调用方代码）；
+      <code>observability.py</code> 的 <code>setup_telemetry</code> 是「令牌门控 + 失败即放行」——没配
+      <code>LOGFIRE_TOKEN</code> 就什么都不做，遥测本身出错也只记警告、绝不阻止服务启动；
+      <code>logging_config.py</code> 只是转发到 <code>_service_core_shim</code>（下面会讲）。
+    </p>
+
+    <div class="callout">
+      <span class="callout-label">顺带发现：两个当前没被真正用到的文件</span>
+      <p>
+        <code>db.py</code>（连接池 + <code>init.sql</code> 应用器）和 <code>llm/schemas.py</code>（一个泛化的
+        <code>ExtractedItem</code> 抽取模型）只被各自的单元测试引用，在 <code>agent.py</code>／<code>cli.py</code> 的真实运行路径里完全没人 import 它们。
+        这符合项目结构的既定分工——pet-agent 从不直接碰数据库，那是 petstore-api 的职责——它们看起来是脚手架模板
+        （<code>.copier-answers.yml</code> 表明这五个子项目都是从同一份公司内部模板生成的）留下的通用样板，还没被清理。不是 bug，但如果要精简代码库，这两个文件是可以先看的地方。
+      </p>
+    </div>
+
+    <h3 class="sub"><code>_service_core_shim/</code>：一个临时替身</h3>
+    <p>
+      <code>config.py</code> 和 <code>logging_config.py</code> 头部注释都写明：这几行 import 本该指向公司内部私有仓库
+      <code>fyrm_service_core</code>（提供分层 env 文件加载、结构化日志、脱敏等能力），但这份检出目前没有那个仓库的读权限，
+      所以先用 <code>pet_agent._service_core_shim</code> 里一份本地替身顶上。以后拿到权限，官方说法是「只需要改两行 import」就能切回去，
+      不影响任何调用方代码。
+    </p>
+  </section>
+
+  <section class="module" id="orchestration">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">06</span><span class="module-path">pet/docker-compose.yml</span></div>
+      <h2>根目录编排：一条命令拉起三个容器</h2>
+      <p class="module-role">整个仓库唯一「写清楚」的启动路径。三个 service：<code>db</code>、<code>petstore-api</code>、<code>pet-agent</code>（pet-mcp 被直接打进 pet-agent 的镜像里，作为它内部启动的子进程，而不是第四个容器）。</p>
+    </div>
+    <ul>
+      <li><strong>db</strong> —— <code>postgres:19beta1-alpine</code>，数据落在命名卷 <code>petstore-db-data</code> 里，<code>docker compose down</code>（不带 <code>-v</code>）不会清掉它，只有显式 <code>down -v</code> 才会。</li>
+      <li><strong>petstore-api</strong> —— <code>depends_on: db (service_healthy)</code>，等数据库健康检查通过才启动，暴露在宿主机的 <code>:8000</code>。</li>
+      <li><strong>pet-agent</strong> —— <code>stdin_open: true</code> + <code>tty: true</code>，要用 <code>docker compose run --rm pet-agent</code>（不是 <code>up</code>）启动，才能把你真正的终端接上去；密钥只通过 <code>env_file: .env</code>（被 <code>.gitignore</code> 和 <code>.dockerignore</code> 双重排除）注入运行中的进程，从不烘进镜像。</li>
+    </ul>
+    <p>
+      容器内 <code>PETSTORE_API_BASE_URL</code> 被显式设成 <code>http://petstore-api:8000</code>（走 Compose 网络的服务名解析），
+      是这个文件里唯一跟「Docker 之外直接跑」不同的地方——脱离 Docker 时默认值是 <code>http://localhost:8000</code>。
+    </p>
+  </section>
+
+  <section class="module" id="issues">
+    <div class="module-head">
+      <div class="module-kicker"><span class="module-num">·</span><span class="module-path">读代码时顺带核实到的问题</span></div>
+      <h2>发现的问题</h2>
+      <p class="module-role">除了逐模块讲解，读代码时用 <code>ast.parse()</code> 和交叉引用核实了两处值得你知道的情况。</p>
+    </div>
+
+    <div class="issue-card">
+      <h4><span class="issue-severity">会阻塞启动</span> pet-agent/src/pet_agent/cli.py:115 — Python 2 语法的多异常捕获</h4>
+      <p>
+        <code>except EOFError, KeyboardInterrupt:</code> 在 Python 3 下是语法错误（已用 <code>ast.parse</code> 实测复现：
+        <code>multiple exception types must be parenthesized</code>）。只要有代码 <code>import pet_agent.cli</code>
+        （包括 <code>docker compose run --rm pet-agent</code> 的入口点），整个进程会在导入阶段直接崩溃，报出这条 SyntaxError。
+      </p>
+      <p class="fix-label">改成 except (EOFError, KeyboardInterrupt):</p>
+    </div>
+
+    <div class="issue-card" style="border-left-color:var(--muted);">
+      <h4><span class="issue-severity low">供你判断</span> pet-agent/db.py 与 llm/schemas.py 未被生产代码引用</h4>
+      <p>
+        分别只出现在 <code>tests/test_db.py</code>、<code>tests/conftest.py</code>、<code>tests/test_llm_client.py</code> 里，
+        <code>agent.py</code>／<code>cli.py</code>／<code>config.py</code> 的真实运行路径都没有 import 它们。大概率是公司内部
+        Copier 模板（<code>.copier-answers.yml</code>）生成时带的通用样板，其余四个子项目的模板文件结构也印证了这一点。不影响现在能不能跑，只是死代码。
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>基于 2026-09-04 对 pet/ 目录（petstore-api · pet-client · pet-mcp · pet-aes · pet-agent · docker-compose.yml）的实际代码通读整理</span>
+    <span>README.md 记录进度：Step 1–9 / 11 已完成</span>
+  </footer>
+
+</div>
+
+<script>
+  try {
+    hljs.highlightAll();
+  } catch (e) { /* highlighting is cosmetic; fail silently */ }
+</script>

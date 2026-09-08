@@ -1,0 +1,23 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v0.4.0
+_src_path: /sessions/rcw-011rpurfdd52ag1qgjr3om6m/mnt/Desktop/template/fyrm-template-gen
+author_email: anakin.chen@fyrm.ai
+author_name: Tianjun Chen
+github_org: fyrm-ai
+package_extras: ''
+project_description: Petstore HTTP client for the Agentic Petstore onboarding project.
+project_name: pet-client
+project_slug: pet_client
+project_type: library
+use_adr: true
+use_async_tests: true
+use_ci: true
+use_claude_scaffold: true
+use_codecov: true
+use_devcontainer: false
+use_docker: false
+use_docs: true
+use_postgres: false
+use_private_deps: true
+use_release_automation: true
+use_security_scanning: true

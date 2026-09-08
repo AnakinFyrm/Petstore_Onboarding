@@ -1,0 +1,43 @@
+site_name: pet-aes
+repo_url: https://github.com/fyrm-ai/pet-aes
+site_url: https://fyrm-ai.github.io/pet-aes
+site_description: Generic Agentic Enterprise System (AES) building blocks: agent spec/registry and MCP toolset wiring, adapted for the Petstore onboarding project.
+site_author: Tianjun Chen
+edit_uri: edit/main/docs/
+repo_name: fyrm-ai/pet-aes
+
+nav:
+  - Home: index.md
+  - Decisions: decisions/index.md
+  - Modules: modules.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["src/pet_aes"]
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - toc:
+      permalink: true

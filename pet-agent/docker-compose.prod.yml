@@ -1,0 +1,42 @@
+# Production stack: runs a prebuilt image from GHCR instead of building from
+# source. See docker-compose.yml (in this same directory) for the developer
+# convenience version, and ../docker-compose.yml for the full system.
+#
+# Usage on the production host:
+#   1. docker login ghcr.io                    # once per machine; PAT with read:packages
+#   2. echo "VERSION=0.1.0" >> .env
+#   3. docker compose -f docker-compose.prod.yml pull
+#   4. docker compose -f docker-compose.prod.yml up -d
+#
+# Upgrading = bump VERSION in .env and repeat 3-4.
+# Rollback = set it back to the previous release and repeat 3-4.
+# Never use :latest or :dev here; production runs exact versions only.
+#
+# NOTE: an earlier version of this file also ran a `postgres` service and
+# required POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB - both were unused,
+# disconnected copier-template scaffolding (see the same note in
+# docker-compose.yml). Removed here for the same reason: this service has no
+# database of its own to run one for.
+# 注:这个文件以前还跑过一个 `postgres` 服务、要求设置
+# POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB —— 这两个都是没被用到的、脱节
+# 的 copier 模板脚手架(理由同 docker-compose.yml 里的那条注释)。这里同样删
+# 掉:这个服务本来就没有自己的数据库需要为它准备一个。
+
+services:
+  app:
+    image: ghcr.io/fyrm-ai/pet-agent:${VERSION:?set VERSION}
+    container_name: pet-agent
+    # Later entries win, so precedence matches the in-app loader:
+    # .env.$APP_ENV profile > .env.shared defaults. App config lives only in
+    # these two files; the deploy .env holds ONLY compose-interpolation vars
+    # (VERSION), never app config.
+    env_file:
+      - path: .env.shared
+        required: false
+      - path: .env.${APP_ENV:-production}
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+    stdin_open: true
+    tty: true
+    restart: "no"

@@ -1,0 +1,54 @@
+# Developer convenience: build and run pet-agent (with pet-mcp bundled inside
+# the same image - see ./Dockerfile) on its own, against a petstore-api this
+# service already reaches some other way (e.g. one you started separately, or
+# point PETSTORE_API_BASE_URL below at a already-running instance).
+#
+# For the FULL system (db + petstore-api + pet-agent, one command) use the
+# top-level ../docker-compose.yml instead - that one is the "one documented
+# startup journey" ONBOARDING.md Section 12, Step 9 asks for. This file is
+# kept only for a developer who wants pet-agent alone.
+#
+# 独立开发时用:单独构建并运行 pet-agent(pet-mcp 打包在同一个镜像里 - 见
+# ./Dockerfile),对接一个已经用别的办法能连到的 petstore-api(比如你另外自己
+# 启动的一个,或者把下面的 PETSTORE_API_BASE_URL 指向一个已经在跑的实例)。
+#
+# 要启动*完整系统*(db + petstore-api + pet-agent,一条命令搞定),请用上一级
+# 目录的 ../docker-compose.yml —— 那一个才是 ONBOARDING.md 第 12 节第 9 步要
+# 求的"一套写清楚的启动流程"。这个文件只是留给只想单独跑 pet-agent 的开发者。
+#
+# NOTE: an earlier version of this file also ran a `postgres` service and set
+# PG_DSN - both were unused, disconnected copier-template scaffolding
+# (src/pet_agent/db.py is never imported by agent.py/cli.py/config.py, and the
+# real Petstore database is owned exclusively by petstore-api, never by this
+# service - see ONBOARDING.md Section 6). Both were removed here rather than
+# wired up, since this service was never meant to have its own database.
+# db.py itself is left in place, unused, in case a future step needs it.
+# 注:这个文件以前还跑过一个 `postgres` 服务、设置了 PG_DSN —— 这两个都是没被
+# 用到的、脱节的 copier 模板脚手架(src/pet_agent/db.py 从来没被
+# agent.py/cli.py/config.py import 过,真正的 Petstore 数据库完全由
+# petstore-api 独占,从来不属于这个服务 —— 见 ONBOARDING.md 第 6 节)。这里选
+# 择直接删掉,而不是接上,因为这个服务本来就不该有自己的数据库。db.py 文件本
+# 身原样保留、只是不再被引用,以防以后哪一步真的需要它。
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: pet-agent/Dockerfile
+    container_name: pet-agent
+    # Later entries win, so precedence matches the in-app loader:
+    # .env.$APP_ENV profile > .env.shared defaults. App config lives only in
+    # these two files; a personal .env is never read.
+    env_file:
+      - path: .env.shared
+        required: false
+      - path: .env.${APP_ENV:-dev}
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+    # The CLI is an interactive terminal dialogue (Step 8) - it needs a real
+    # stdin/tty, or every `input_func("You: ")` call hits EOF immediately.
+    # CLI 是一个交互式终端对话(第 8 步)——它需要一个真正的 stdin/tty,不然每
+    # 一次 `input_func("You: ")` 都会立刻遇到 EOF。
+    stdin_open: true
+    tty: true
+    restart: "no"

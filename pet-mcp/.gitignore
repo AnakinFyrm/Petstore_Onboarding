@@ -1,0 +1,43 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Test / coverage reports
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+
+# Environments: real env files stay local, committed templates are re-included.
+.env
+.env.*
+!.env.example
+!.env.shared
+!.env.*.example
+.envrc
+.venv/
+
+# Documentation build output (mkdocs)
+site/
+
+# Logs
+logs/
+*.log
+
+# The committed .claude/settings.json is intentional; local overrides are not.
+.claude/settings.local.json

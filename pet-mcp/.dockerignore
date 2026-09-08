@@ -1,0 +1,41 @@
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.pyc
+dist
+build
+htmlcov
+.coverage
+coverage.xml
+docs
+site
+tests
+
+# Secrets and local env: inject at runtime (env_file / -e / --secret), never
+# bake into the image. The Dockerfile does `COPY . .`, so anything not excluded
+# here ends up in an image layer.
+.env
+.env.*
+!.env.example
+!.env.shared
+*.pem
+certs/
+
+# Local artifacts
+*.log
+.vscode
+
+# Not needed in the runtime image
+mkdocs.yml
+codecov.yaml
+.pre-commit-config.yaml
+.editorconfig
+.devcontainer
+Dockerfile
+docker-compose*.yml
+Makefile
+tox.ini

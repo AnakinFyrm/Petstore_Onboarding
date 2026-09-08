@@ -1,0 +1,131 @@
+# The ONE documented startup journey for the complete Petstore environment
+# (ONBOARDING.md Section 12, Step 9): database, petstore-api, and pet-agent
+# (with pet-mcp bundled inside its own image - see pet-agent/Dockerfile for
+# why) all start from this single file. See the top-level README for the full
+# walkthrough; the short version:
+#
+#   cp .env.example .env              # fill in your real LLM key - see below
+#   docker compose up -d db petstore-api
+#   docker compose run --rm pet-agent
+#
+# `run --rm` (not `up`) for pet-agent because it is an interactive terminal
+# dialogue (Step 8), not a background service - `run` attaches your real
+# terminal to it and removes the container when the conversation ends;
+# `--build` can be added the first time (or after a code change) to rebuild
+# the image first.
+#
+# 这是完整 Petstore 环境唯一一套写清楚的启动流程(对应 ONBOARDING.md 第 12 节
+# 第 9 步):数据库、petstore-api、还有 pet-agent(pet-mcp 打包在它自己的镜像
+# 里 - 原因见 pet-agent/Dockerfile)都从这一个文件启动。完整说明见顶层
+# README;简短版本:
+#
+#   cp .env.example .env              # 填入你真实的 LLM 密钥 - 见下面
+#   docker compose up -d db petstore-api
+#   docker compose run --rm pet-agent
+#
+# pet-agent 用 `run --rm` 而不是 `up`,因为它是一个交互式的终端对话(第 8
+# 步),不是一个后台服务——`run` 会把你真正的终端接到它上面,对话结束后自动
+# 删掉这个容器;第一次跑(或者改过代码之后)可以加上 `--build` 先重新构建镜像。
+
+services:
+  db:
+    # Same image/config petstore-api's own standalone docker-compose.yml
+    # uses - reused as-is here, this is that same database, not a second one.
+    # 跟 petstore-api 自己那份独立 docker-compose.yml 用的是同一个镜像/配
+    # 置——这就是同一个数据库,不是另建了一个。
+    image: postgres:19beta1-alpine
+    container_name: petstore-db
+    environment:
+      POSTGRES_USER: petstore
+      POSTGRES_PASSWORD: petstore
+      POSTGRES_DB: petstore
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume, not a bind mount: purchases and availability changes
+      # made during a conversation must still be there the next time this
+      # stack starts (Step 9's explicit requirement) - `docker compose down`
+      # (without -v) leaves this volume alone; only `docker compose down -v`
+      # or `docker volume rm` erases it.
+      # 用命名卷,不是 bind mount:对话过程中产生的购买记录和库存变化,下次启
+      # 动这套环境时必须还在(第 9 步明确要求的)——`docker compose down`(不
+      # 带 -v)不会动这个卷;只有 `docker compose down -v` 或者
+      # `docker volume rm` 才会真的清掉它。
+      - petstore-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petstore -d petstore"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  petstore-api:
+    build: ./petstore-api
+    container_name: petstore-api
+    environment:
+      DATABASE_URL: postgresql://petstore:petstore@db:5432/petstore
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pet-agent:
+    build:
+      # Context is THIS directory (the shared parent), not ./pet-agent - see
+      # pet-agent/Dockerfile's own top comment for why that is required.
+      # 上下文是*这个*目录(共同的父目录),不是 ./pet-agent —— 原因见
+      # pet-agent/Dockerfile 自己最上面的注释。
+      context: .
+      dockerfile: pet-agent/Dockerfile
+    container_name: pet-agent
+    # Non-secret, environment-independent defaults only (LOG_LEVEL, ...) -
+    # matches how pet-agent/docker-compose.yml (the standalone variant) loads
+    # this same file. Paths here are resolved relative to this compose
+    # file's own directory, i.e. this repository's top level.
+    # 只放非密钥、跟环境无关的默认值(LOG_LEVEL 等等)——跟
+    # pet-agent/docker-compose.yml(单独跑 pet-agent 的那个版本)加载同一个
+    # 文件的方式一致。这里的路径是相对这份 compose 文件自己所在目录(也就是
+    # 这个仓库的顶层)解析的。
+    env_file:
+      - path: pet-agent/.env.shared
+        required: false
+      # Real secrets (the LLM key) live ONLY here, in a file this repository's
+      # .gitignore already excludes and this stack's own .dockerignore keeps
+      # out of every image - see .env.example in this same directory for the
+      # template. Never baked into an image, never committed.
+      # 真正的密钥(LLM key)只放在这里——这个仓库的 .gitignore 早就排除了这
+      # 个文件,这套环境自己的 .dockerignore 也会让它进不了任何镜像——模板见
+      # 同目录下的 .env.example。绝不会被打进镜像,也绝不会被提交。
+      - path: .env
+        required: false
+    environment:
+      # Service-name networking: pet-agent reaches petstore-api by this
+      # compose network's DNS name, not localhost - this line is the one
+      # thing that differs from running pet-agent outside Docker (where it
+      # defaults to http://localhost:8000). This is passed straight through
+      # to the bundled pet-mcp subprocess, exactly as it is outside Docker -
+      # pet-agent itself never talks to petstore-api directly.
+      # 走 compose 网络里的服务名解析,而不是 localhost —— 这是唯一一处跟在
+      # Docker 外面跑 pet-agent 不一样的地方(外面默认是
+      # http://localhost:8000)。这个值会原样透传给内部打包的 pet-mcp 子进
+      # 程,跟在 Docker 之外完全一样——pet-agent 自己从来不会直接跟
+      # petstore-api 通信。
+      PETSTORE_API_BASE_URL: http://petstore-api:8000
+    depends_on:
+      - petstore-api
+    # The CLI is an interactive terminal dialogue (Step 8); start it with
+    # `docker compose run --rm pet-agent`, not `up`, so your real terminal is
+    # attached to it. It is still declared as a service (rather than left out
+    # of this file) so that one command builds it along with everything else.
+    # CLI 是一个交互式终端对话(第 8 步);要用
+    # `docker compose run --rm pet-agent` 来启动它,而不是 `up`,这样你真正
+    # 的终端才会接上去。这里仍然把它声明成一个 service(而不是干脆不写进这个
+    # 文件),这样一条命令就能把它跟其他东西一起构建出来。
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+volumes:
+  petstore-db-data:

@@ -1,0 +1,6 @@
+# The templates are a starting point, not a gate: a one-line issue is still fine.
+blank_issues_enabled: true
+contact_links:
+  - name: Project documentation
+    url: https://fyrm-ai.github.io/pet-mcp/
+    about: Configuration reference and runbooks, worth a look before filing.

@@ -1,0 +1,77 @@
+name: Security
+
+# Report-only supply-chain scanning. Every scan step carries
+# `continue-on-error: true`: findings are annotated on the run and the job stays
+# green, so a newly published advisory in a transitive dependency cannot block an
+# unrelated merge. Once this repository's backlog is at zero, drop the
+# `continue-on-error` line from a job to make that scan blocking.
+#
+# Not here: CodeQL. It needs paid GitHub Code Security, which the organisation
+# does not have. Ruff's `S` (bandit) rules run in the quality gate and are the
+# source check. Dependabot alerts cover already-published advisories and have to
+# be switched on per repository in Settings > Advanced Security.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # An advisory can be published against a dependency that has not changed, so
+  # this must run on a clock and not only on a push.
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      # Audits the resolved tree in uv.lock against the PyPA advisory database,
+      # so it sees transitive dependencies, not just the ones pinned here.
+      # `uv audit` is still marked experimental and prints a warning saying so;
+      # that is expected output, not a failure. It exits non-zero when it finds
+      # something, which continue-on-error turns into an annotation.
+      - name: Audit dependencies
+        continue-on-error: true
+        run: uv audit --locked
+
+  workflow-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # setup-uv directly rather than the composite action: zizmor reads the
+      # workflow files and needs no project environment.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      # Finds the workflow-level mistakes nothing else looks for: unpinned
+      # actions, over-broad permissions, template injection through
+      # ${{ github.event.* }} interpolated into a run block, and credential
+      # persistence.
+      - name: Audit workflow definitions
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uvx zizmor@1.28.0 .github/workflows .github/actions

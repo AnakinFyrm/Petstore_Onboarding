@@ -1,0 +1,226 @@
+<title>Petstore 请求流水线</title>
+<meta name="description" content="一条顾客消息从 CLI 到数据库、再回到 CLI 的完整路径，标出 MCP 工具白名单这道安全边界">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root{
+    --paper:#efede6;
+    --card:#fbfaf6;
+    --ink:#20241f;
+    --ink-soft:#3b3e35;
+    --muted:#6e6a5c;
+    --line:#c7c1ac;
+    --line-soft:#d9d4c4;
+    --accent:#3c6e52;
+    --accent-soft:#e2ede5;
+    --warn:#b5562a;
+    --warn-soft:#f6e6dc;
+    --shadow: 0 1px 2px rgba(32,36,31,.06), 0 8px 24px -16px rgba(32,36,31,.25);
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --serif: "Source Serif 4", Georgia, "Songti SC", serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#14170f; --card:#1b1f17; --ink:#e9e6d8; --ink-soft:#c9c4b0;
+      --muted:#9a9683; --line:#454833; --line-soft:#333629;
+      --accent:#7bb894; --accent-soft:#213229; --warn:#e08a54; --warn-soft:#3a2418;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 12px 28px -18px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#14170f; --card:#1b1f17; --ink:#e9e6d8; --ink-soft:#c9c4b0;
+    --muted:#9a9683; --line:#454833; --line-soft:#333629;
+    --accent:#7bb894; --accent-soft:#213229; --warn:#e08a54; --warn-soft:#3a2418;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 12px 28px -18px rgba(0,0,0,.6);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width:820px; margin:0 auto; padding:52px 24px 72px; }
+
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:.76rem; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:16px;
+  }
+  .eyebrow::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  h1{
+    font-family:var(--serif); font-weight:650; font-size:clamp(1.7rem,3.6vw,2.4rem);
+    line-height:1.15; text-wrap:balance; margin:0;
+  }
+  p.lede{ color:var(--ink-soft); max-width:64ch; margin:14px 0 0; font-size:1.02rem; }
+
+  figure{ margin:40px 0 8px; }
+  .diagram-card{
+    background:var(--card); border:1px solid var(--line-soft); border-radius:14px;
+    box-shadow:var(--shadow); padding:20px 16px 8px; overflow-x:auto;
+  }
+  svg{ display:block; margin:0 auto; max-width:100%; height:auto; min-width:560px; }
+  figcaption{
+    font-size:.9rem; color:var(--muted); text-align:center; max-width:60ch;
+    margin:14px auto 0; line-height:1.55;
+  }
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:18px; justify-content:center;
+    margin:26px 0 4px; font-family:var(--mono); font-size:.74rem; color:var(--muted);
+  }
+  .legend span{ display:inline-flex; align-items:center; gap:7px; }
+  .legend .swatch{ width:18px; height:2px; display:inline-block; }
+  .legend .swatch.dashed{ background:transparent; border-top:2px dashed var(--ink-soft); }
+  .legend .swatch.solid{ background:var(--ink-soft); }
+  .legend .swatch.accent{ background:var(--accent); height:3px; }
+
+  .callout{
+    border:1px solid var(--line-soft); border-left:4px solid var(--accent);
+    background:var(--accent-soft); border-radius:8px; padding:14px 16px;
+    margin:32px 0; max-width:70ch; margin-left:auto; margin-right:auto;
+  }
+  .callout .label{
+    font-family:var(--mono); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--accent); font-weight:600;
+  }
+  .callout p{ color:var(--ink-soft); margin:6px 0 0; font-size:.92rem; }
+  .callout code{ font-family:var(--mono); color:var(--ink); background:var(--card); padding:1px 5px; border-radius:4px; border:1px solid var(--line-soft); font-size:.85em; }
+
+  footer{
+    margin-top:56px; padding-top:18px; border-top:1px solid var(--line-soft);
+    font-family:var(--mono); font-size:.74rem; color:var(--muted); text-align:center;
+  }
+
+  @media (max-width:600px){ .wrap{ padding:36px 16px 56px; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">pet/ · 请求流水线</div>
+  <h1>一句「有猫吗？」是怎么走完全程的</h1>
+  <p class="lede">
+    从你在 CLI 里敲下一行字，到这句话变成一次真正打到 PostgreSQL 的 SQL 查询、再把结果说回给你 ——
+    这张图画的是这条路径实际经过的每一跳，以及哪一跳是真正的进程边界。
+  </p>
+
+  <figure>
+    <div class="diagram-card">
+      <svg viewBox="0 0 760 910" role="img" aria-label="顾客消息从 CLI 经 AES、Pydantic AI Agent、MCP 白名单过滤、pet-client、petstore-api 到 PostgreSQL 的完整请求路径，其中 Agent 与 LLM 之间、以及跨容器的两跳为网络调用，Agent 与 MCP 之间的一跳被高亮为白名单过滤的安全边界">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"></path>
+          </marker>
+        </defs>
+
+        <g style="color:var(--ink-soft)" font-family="IBM Plex Sans, sans-serif">
+
+          <!-- 顾客 -->
+          <circle cx="44" cy="46" r="15" fill="none" style="stroke:var(--ink-soft)" stroke-width="1.6"></circle>
+          <path d="M38,42 a6,6 0 1,1 12,0" fill="none" style="stroke:var(--ink-soft)" stroke-width="1.6"></path>
+          <text x="70" y="42" font-size="13" font-weight="600" style="fill:var(--ink)">顾客</text>
+          <text x="70" y="57" font-size="10.5" style="fill:var(--muted)">在终端里打字</text>
+
+          <line x1="44" y1="64" x2="44" y2="118" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrow)"></line>
+          <text x="54" y="94" font-size="10.5" style="fill:var(--muted)">「有猫吗？」</text>
+
+          <!-- pet-agent 容器边界 -->
+          <rect x="16" y="118" width="300" height="480" rx="14" fill="none" style="stroke:var(--line)" stroke-width="1.4" stroke-dasharray="5 4"></rect>
+          <text x="32" y="140" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="0.03em" style="fill:var(--muted)">PET-AGENT 容器 · docker compose run</text>
+
+          <!-- CLI -->
+          <rect x="36" y="154" width="256" height="54" rx="9" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></rect>
+          <text x="164" y="176" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">CLI</text>
+          <text x="164" y="192" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">cli.py · run_dialogue()</text>
+
+          <line x1="164" y1="208" x2="164" y2="248" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrow)"></line>
+          <text x="176" y="232" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">handle_message()</text>
+
+          <!-- AES -->
+          <rect x="36" y="248" width="256" height="54" rx="9" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></rect>
+          <text x="164" y="270" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">AES</text>
+          <text x="164" y="286" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">HostedAgentService · session 历史</text>
+
+          <line x1="164" y1="302" x2="164" y2="342" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrow)"></line>
+          <text x="176" y="326" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">agent.run(msg, history)</text>
+
+          <!-- Agent -->
+          <rect x="36" y="342" width="256" height="54" rx="9" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></rect>
+          <text x="164" y="364" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">Agent</text>
+          <text x="164" y="380" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">pydantic_ai · petstore-agent</text>
+
+          <!-- Agent <-> LLM (network, dashed) -->
+          <line x1="292" y1="369" x2="404" y2="358" style="stroke:var(--ink-soft)" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrow)" marker-start="url(#arrow)"></line>
+          <text x="300" y="342" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">补全请求/回复</text>
+          <text x="300" y="355" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">(HTTP，多轮循环)</text>
+
+          <rect x="404" y="322" width="256" height="72" rx="12" fill="none" style="stroke:var(--line)" stroke-width="1.4" stroke-dasharray="5 4"></rect>
+          <text x="532" y="352" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">LLM 后端</text>
+          <text x="532" y="368" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">OpenRouter · openai_compat</text>
+          <text x="532" y="382" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">（云端，容器外）</text>
+
+          <!-- Agent -> MCP, highlighted -->
+          <line x1="164" y1="396" x2="164" y2="470" style="stroke:var(--accent)" stroke-width="2.4" marker-end="url(#arrow-accent)" marker-start="url(#arrow-accent)"></line>
+          <text x="176" y="422" font-family="IBM Plex Mono, monospace" font-size="9.5" font-weight="600" style="fill:var(--accent)">MCP tool call ⇄ result</text>
+          <text x="176" y="435" font-family="IBM Plex Mono, monospace" font-size="9.5" font-weight="600" style="fill:var(--accent)">(stdio 子进程)</text>
+          <text x="176" y="450" font-family="IBM Plex Mono, monospace" font-size="9.5" font-weight="600" style="fill:var(--accent)">→ 过滤到白名单 3 个工具</text>
+
+          <!-- MCP -->
+          <rect x="36" y="470" width="256" height="72" rx="9" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></rect>
+          <text x="164" y="494" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">pet-mcp + pet-client</text>
+          <text x="164" y="510" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">同一子进程 · server.py</text>
+          <text x="164" y="524" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">search_pets · get_pet · purchase_pet</text>
+
+          <line x1="164" y1="542" x2="164" y2="574" style="stroke:var(--ink-soft)" stroke-width="1.6"></line>
+
+          <!-- exit container, HTTP to petstore-api -->
+          <path d="M164,574 L164,598 L164,660" fill="none" style="stroke:var(--ink-soft)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"></path>
+          <text x="176" y="628" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">HTTP GET/POST</text>
+          <text x="176" y="641" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">（唯一出容器的调用）</text>
+
+          <!-- petstore-api -->
+          <rect x="36" y="660" width="256" height="64" rx="9" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></rect>
+          <text x="164" y="686" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">petstore-api 容器</text>
+          <text x="164" y="702" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">FastAPI · crud.py · schemas.py</text>
+
+          <line x1="164" y1="724" x2="164" y2="762" style="stroke:var(--ink-soft)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"></line>
+          <text x="176" y="748" font-family="IBM Plex Mono, monospace" font-size="9.5" style="fill:var(--muted)">参数化 SQL (psycopg)</text>
+
+          <!-- db cylinder -->
+          <path d="M60,780 v70 a94,10 0 0,0 208,0 v-70" fill="none" style="stroke:var(--line)" stroke-width="1.4"></path>
+          <ellipse cx="164" cy="780" rx="104" ry="10" style="fill:var(--card); stroke:var(--line)" stroke-width="1.4"></ellipse>
+          <text x="164" y="822" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--ink)">PostgreSQL</text>
+          <text x="164" y="838" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" style="fill:var(--muted)">db 容器 · petstore-db-data 卷</text>
+
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      顾客的一句话经 CLI → AES → Agent 这三跳都只是同一进程里的普通函数调用；真正的进程/网络边界只有三处 ——
+      Agent 与 LLM 之间、Agent 与 pet-mcp 子进程之间（图中高亮的一跳，也是工具白名单被强制的地方）、
+      以及 pet-mcp 出容器访问 petstore-api 再落到 PostgreSQL 的那一段。
+    </figcaption>
+  </figure>
+
+  <div class="legend">
+    <span><i class="swatch solid"></i>同进程函数调用</span>
+    <span><i class="swatch dashed"></i>跨进程 / 网络调用</span>
+    <span><i class="swatch accent"></i>MCP 白名单过滤边界</span>
+  </div>
+
+  <div class="callout">
+    <span class="label">这条流水线上唯一被强制的安全边界</span>
+    <p>
+      pet-mcp 这个 MCP 服务器本身可以暴露任意多个工具，但 pet-aes 的 <code>build_agent()</code> 会把传进来的
+      toolset 过滤到 <code>PETSTORE_AGENT_SPEC</code> 声明的那三个名字——<code>pet_mcp_search_pets</code>、
+      <code>pet_mcp_get_pet</code>、<code>pet_mcp_purchase_pet</code>。图上标橙的这一跳，就是这道白名单实际生效的地方：
+      Agent 不会因为 pet-mcp 以后多暴露几个工具，就顺带多出几样能力。
+    </p>
+  </div>
+
+  <footer>基于 pet/ 目录源码整理 · 与 pet-walkthrough.html 配套阅读</footer>
+</div>

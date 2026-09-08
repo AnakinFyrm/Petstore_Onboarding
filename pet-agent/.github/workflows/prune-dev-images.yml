@@ -1,0 +1,47 @@
+name: prune-dev-images
+
+# Every merge to main pushes a sha-<commit> image to GHCR; without pruning they
+# accumulate forever and eat the org's private-package storage quota. This keeps
+# the 10 newest sha-only builds and deletes the rest. Release versions
+# (X.Y.Z / X.Y / latest) and the current :dev build carry non-sha tags, so they
+# can never match the filter and are never deleted.
+#
+# The multi-arch index also creates untagged package versions (one manifest per
+# platform, plus the SBOM/provenance attestations). They are left alone on
+# purpose: an untagged manifest may be a child of a live release index, and
+# deleting it would break pulls of a shipped version.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # weekly, Monday 04:17 UTC
+  workflow_dispatch:
+
+# Nothing is checked out here; the job only talks to the packages API.
+permissions: {}
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old sha-* image versions (keep 10 newest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! versions=$(gh api "/orgs/fyrm-ai/packages/container/pet-agent/versions?per_page=100" 2>&1); then
+            echo "Package not found yet; nothing to prune."
+            exit 0
+          fi
+
+          echo "$versions" | jq -r '
+            [ .[]
+              | {id, created_at, tags: .metadata.container.tags}
+              | select((.tags | length) > 0 and (.tags | all(startswith("sha-"))))
+            ]
+            | sort_by(.created_at) | reverse | .[10:] | .[].id
+          ' | while read -r id; do
+            gh api -X DELETE "/orgs/fyrm-ai/packages/container/pet-agent/versions/$id"
+            echo "Deleted package version $id"
+          done
